@@ -1,37 +1,40 @@
 const express = require('express');
-const chromium = process.env.VERCEL ? require('@sparticuz/chromium-min') : null;
-const puppeteer = process.env.VERCEL ? require('puppeteer-core') : require('puppeteer');
+const chromium = require('@sparticuz/chromium');
+const puppeteer = require('puppeteer-core');
 
 const app = express();
-const port = 3000;
+const port = process.env.PORT || 3000;
 
 app.use(express.json());
 
+// Chromium options (larger for better compatibility)
+chromium.setGraphicsMode = false;
+chromium.setHeadlessMode = true;
+
 app.post('/generate-pdf', async (req, res) => {
-  const { url } = req.body;
+  const { url, filename = 'document.pdf' } = req.body;
 
   if (!url || !/^https?:\/\//.test(url)) {
     return res.status(400).json({ error: 'A valid URL is required' });
   }
 
-//   let browser;
+  let browser;
   try {
-    const browser = await puppeteer.launch(
-  process.env.VERCEL ? {
-    args: [...chromium.args, '--hide-scrollbars', '--disable-web-security'],
-    defaultViewport: chromium.defaultViewport,
-    executablePath: await chromium.executablePath(),
-    headless: chromium.headless,
-    ignoreHTTPSErrors: true,
-  } : {
-    headless: 'new',
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
-  }
-);
+    const executablePath = await chromium.executablePath();
+    console.log('Chromium executable path:', executablePath);
+
+    browser = await puppeteer.launch({
+      args: chromium.args,
+      executablePath,
+      headless: chromium.headless,
+      ignoreHTTPSErrors: true,
+    });
+
     const page = await browser.newPage();
+    await page.setDefaultNavigationTimeout(60000); // Increased timeout
     await page.goto(url, { 
-      waitUntil: 'networkidle0',
-      timeout: 30000 
+      waitUntil: 'networkidle2',
+      timeout: 60000 
     });
 
     const pdfBuffer = await page.pdf({
@@ -47,7 +50,7 @@ app.post('/generate-pdf', async (req, res) => {
 
     res.set({
       'Content-Type': 'application/pdf',
-      'Content-Disposition': 'attachment; filename=page.pdf',
+      'Content-Disposition': `attachment; filename="${filename}"`,
       'Content-Length': pdfBuffer.length
     });
 
@@ -56,11 +59,11 @@ app.post('/generate-pdf', async (req, res) => {
     console.error('PDF Generation Error:', error);
     res.status(500).json({ 
       error: 'Failed to generate PDF',
-      details: error.message // Include error details for debugging
+      details: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
   } finally {
     if (browser) {
-      await browser.close();
+      await browser.close().catch(e => console.error('Browser close error:', e));
     }
   }
 });
@@ -69,6 +72,5 @@ app.get('/', (req, res) => {
   res.send("PDF Generator API is running. Send a POST request to /generate-pdf with a URL to generate a PDF.");
 });
 
-app.listen(port, () => {
-  console.log(`PDF Generator API listening at http://localhost:${port}`);
-});
+// Export for Vercel
+module.exports = app;
