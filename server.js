@@ -1,15 +1,21 @@
 const express = require('express');
-const chromium = require('@sparticuz/chromium');
-const puppeteer = require('puppeteer-core');
-
 const app = express();
 const port = process.env.PORT || 3000;
 
-app.use(express.json());
+// Dynamic imports based on environment
+let puppeteer;
+let chromium;
 
-// Chromium options (larger for better compatibility)
-chromium.setGraphicsMode = false;
-chromium.setHeadlessMode = true;
+if (process.env.VERCEL) {
+  // For Vercel deployment
+  chromium = require('@sparticuz/chromium-min');
+  puppeteer = require('puppeteer-core');
+} else {
+  // For local development
+  puppeteer = require('puppeteer');
+}
+
+app.use(express.json());
 
 app.post('/generate-pdf', async (req, res) => {
   const { url, filename = 'document.pdf' } = req.body;
@@ -20,21 +26,25 @@ app.post('/generate-pdf', async (req, res) => {
 
   let browser;
   try {
-    const executablePath = await chromium.executablePath();
-    console.log('Chromium executable path:', executablePath);
-
-    browser = await puppeteer.launch({
-      args: chromium.args,
-      executablePath,
+    const launchOptions = process.env.VERCEL ? {
+      args: [...chromium.args, '--hide-scrollbars', '--disable-web-security'],
+      defaultViewport: chromium.defaultViewport,
+      executablePath: await chromium.executablePath(),
       headless: chromium.headless,
       ignoreHTTPSErrors: true,
-    });
+    } : {
+      headless: 'new',
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+    };
+
+    console.log('Launching browser with options:', launchOptions);
+    browser = await puppeteer.launch(launchOptions);
 
     const page = await browser.newPage();
-    await page.setDefaultNavigationTimeout(60000); // Increased timeout
-    await page.goto(url, { 
+    await page.setDefaultNavigationTimeout(60000);
+    await page.goto(url, {
       waitUntil: 'networkidle2',
-      timeout: 60000 
+      timeout: 60000
     });
 
     const pdfBuffer = await page.pdf({
@@ -57,7 +67,7 @@ app.post('/generate-pdf', async (req, res) => {
     res.send(pdfBuffer);
   } catch (error) {
     console.error('PDF Generation Error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to generate PDF',
       details: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
@@ -72,5 +82,10 @@ app.get('/', (req, res) => {
   res.send("PDF Generator API is running. Send a POST request to /generate-pdf with a URL to generate a PDF.");
 });
 
-// Export for Vercel
+if (!process.env.VERCEL) {
+  app.listen(port, () => {
+    console.log(`Server running on http://localhost:${port}`);
+  });
+}
+
 module.exports = app;
