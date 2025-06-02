@@ -1,0 +1,22 @@
+{
+  "name": "create-pdf",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@sparticuz/chromium-min": "^133.0.0",
+    "express": "^5.1.0",
+    "puppeteer": "^24.10.0",
+    "puppeteer-core": "^24.10.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
+  }
+}
